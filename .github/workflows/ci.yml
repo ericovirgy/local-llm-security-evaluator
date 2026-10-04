@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+      - name: Format
+        run: ruff format --check src tests
+      - name: Type check
+        run: mypy
+      - name: Tests (no live model required)
+        run: pytest
+      - name: Validate built-in suite
+        run: llmsec validate-suite src/llmsec/suites/core
+      - name: Smoke run with reference responders
+        run: |
+          llmsec run --adapter reference --model refuse --output-dir "$RUNNER_TEMP/r" --quiet --json
+          llmsec compare --adapter reference --models refuse echo --output-dir "$RUNNER_TEMP/c" --quiet
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Check the wheel ships the built-in suite
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP" && llmsec list-tests | head -3
