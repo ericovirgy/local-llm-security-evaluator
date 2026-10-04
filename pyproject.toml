@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "local-llm-security-evaluator"
+dynamic = ["version"]
+description = "Local-first security evaluation and benchmarking for LLMs: reproducible adversarial scenarios, deterministic checks and evidence-based reports."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "ericovirgy" }]
+keywords = ["llm", "security", "evaluation", "benchmark", "prompt-injection", "ollama", "red-teaming"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "types-PyYAML"]
+
+[project.scripts]
+llmsec = "llmsec.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ericovirgy/BUILD-PUBLISH-A-LOCAL-LLM-SECURITY-EVALUATOR-FROM-ZERO"
+Issues = "https://github.com/ericovirgy/BUILD-PUBLISH-A-LOCAL-LLM-SECURITY-EVALUATOR-FROM-ZERO/issues"
+
+[tool.hatch.version]
+path = "src/llmsec/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llmsec"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/llmsec", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "CONTRIBUTING.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not live'"
+markers = ["live: requires a running local model endpoint (set LLMSEC_LIVE_MODEL)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "BLE", "UP", "S", "SIM", "RUF", "PL", "PT", "C4", "RET", "ARG"]
+ignore = ["PLR0913", "PLR0917", "PLR2004", "PLR0911", "PLR0912", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PLR", "ARG", "PT018", "PLC0415", "PLW0108", "RUF001", "RUF059", "BLE"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
