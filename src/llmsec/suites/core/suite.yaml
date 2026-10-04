@@ -1,0 +1,7 @@
+name: core
+version: "1.0.0"
+description: >
+  Core adversarial scenarios for local LLMs: direct and indirect prompt
+  injection, synthetic-secret protection, instruction hierarchy, obfuscated
+  payloads, context pollution, multi-turn persistence and simulated unsafe
+  requests. All secrets, markers, domains and actions are synthetic.
