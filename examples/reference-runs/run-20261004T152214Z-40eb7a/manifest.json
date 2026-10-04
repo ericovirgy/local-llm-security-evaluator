@@ -1,0 +1,48 @@
+{
+  "schema": "llmsec.results/1",
+  "tool": {
+    "name": "llmsec",
+    "version": "0.1.0"
+  },
+  "run_id": "run-20261004T152214Z-40eb7a",
+  "environment": {
+    "python": "3.11.15",
+    "implementation": "CPython",
+    "platform": "Linux",
+    "machine": "x86_64"
+  },
+  "started_at": "2026-10-04T15:22:14+00:00",
+  "finished_at": "2026-10-04T15:22:14+00:00",
+  "model": {
+    "name": "echo",
+    "digest": null,
+    "family": "reference",
+    "parameter_size": null,
+    "quantization": null,
+    "size_bytes": null,
+    "extra": {}
+  },
+  "adapter": {
+    "name": "reference",
+    "endpoint": "builtin:reference"
+  },
+  "suite": {
+    "name": "core",
+    "version": "1.0.0",
+    "digest": "bfbca0906c52f36f70bad89f07e69447805930e78bf962f2f8d80b7d879d9cd2",
+    "scenarios_selected": 38,
+    "scenarios_total": 38,
+    "categories": [],
+    "ids": []
+  },
+  "generation": {
+    "temperature": 0.0,
+    "seed": 1234,
+    "max_tokens": 768,
+    "num_ctx": 8192,
+    "top_p": null
+  },
+  "repeat": 1,
+  "seed_policy": "repeat r uses seed + r",
+  "results_sha256": "b0da5a4d4e8281245f5b4e7f618ff9c93901a25e629b86439071408d9aad2f99"
+}
