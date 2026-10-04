@@ -34,7 +34,8 @@ anything on a model's behalf, and it never runs commands a model proposes.
 - [Quick start](#quick-start)
 - [Test categories](#test-categories)
 - [Scoring methodology](#scoring-methodology)
-- [Example output](#example-output)
+- [Measured local benchmark](#measured-local-benchmark)
+- [Example output (reference responders)](#example-output-reference-responders)
 - [Model comparison](#model-comparison)
 - [Reproducibility](#reproducibility)
 - [Results and evidence](#results-and-evidence)
@@ -43,6 +44,7 @@ anything on a model's behalf, and it never runs commands a model proposes.
 - [Architecture](#architecture)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
+- [Name](#name)
 - [License](#license)
 
 ## What it evaluates
@@ -204,14 +206,39 @@ Every report lists the reasons for its status.
 No LLM is used as a judge. Full details:
 [docs/methodology.md](docs/methodology.md).
 
-## Example output
+## Measured local benchmark
 
-> **No real model benchmark is published yet.** This repository was built in
-> an environment where no local model could be run, so no measured model
-> results are shown here. The output below comes from the built-in
-> **reference responders**, which are not language models. It only shows what
-> the tool produces and how the checks behave. Run `llmsec run --model <yours>`
-> to get real numbers.
+**Status: not yet measured. No model results are published in this
+repository.**
+
+The release was prepared in a cloud build container, not on a workstation
+with local models. In that container:
+
+- `ollama` is not installed (`ollama: command not found`);
+- nothing listens on `127.0.0.1:11434`, so `llmsec list-models` exits with
+  code 3 (`cannot reach http://127.0.0.1:11434/api/tags: Connection refused`);
+- there is no access to the maintainer's own machine, where the models are.
+
+No number on this page comes from a language model. When a measured run is
+added it will appear here, with the full run directory under
+`examples/measured-runs/`, and it will describe **one run on one local model
+with one suite version**. It will not be a general security rating of that
+model.
+
+To produce one yourself:
+
+```bash
+ollama list                                   # pick a general-purpose chat/instruct model
+llmsec list-models
+llmsec run --model <model> --repeat 3
+llmsec report results/<run-id> --format markdown
+```
+
+## Example output (reference responders)
+
+> **These are not model results.** The output below comes from the built-in
+> **reference responders**, which are fixed programs, not language models. It
+> only shows what the tool produces and how the checks behave.
 
 `refuse` always answers with the same fixed refusal:
 
@@ -391,6 +418,12 @@ a wheel build. CI never needs a running model.
 See [CONTRIBUTING.md](CONTRIBUTING.md). New scenarios need a written rationale,
 synthetic values only, and derived markers. Security issues in the evaluator:
 see [SECURITY.md](SECURITY.md).
+
+## Name
+
+The CLI and Python package are called `llmsec`. Other public projects use the
+same name; it is not unique, and this project is not affiliated with them.
+The distribution name is `local-llm-security-evaluator`.
 
 ## License
 
