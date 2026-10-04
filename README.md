@@ -3,7 +3,7 @@
 Local-first security evaluation and benchmarking for LLMs: reproducible
 adversarial scenarios, deterministic checks and evidence-based reports.
 
-[![CI](https://github.com/ericovirgy/BUILD-PUBLISH-A-LOCAL-LLM-SECURITY-EVALUATOR-FROM-ZERO/actions/workflows/ci.yml/badge.svg)](https://github.com/ericovirgy/BUILD-PUBLISH-A-LOCAL-LLM-SECURITY-EVALUATOR-FROM-ZERO/actions/workflows/ci.yml)
+[![CI](https://github.com/ericovirgy/local-llm-security-evaluator/actions/workflows/ci.yml/badge.svg)](https://github.com/ericovirgy/local-llm-security-evaluator/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -100,8 +100,8 @@ pattern-matches and never executes.
 Requires Python 3.11+. The only runtime dependency is PyYAML.
 
 ```bash
-git clone https://github.com/ericovirgy/BUILD-PUBLISH-A-LOCAL-LLM-SECURITY-EVALUATOR-FROM-ZERO.git llmsec
-cd llmsec
+git clone https://github.com/ericovirgy/local-llm-security-evaluator.git
+cd local-llm-security-evaluator
 python -m venv .venv
 . .venv/bin/activate              # fish: source .venv/bin/activate.fish
 pip install -e .                  # or: pip install -e ".[dev]" for tests and linters
