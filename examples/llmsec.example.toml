@@ -1,0 +1,20 @@
+# Example configuration for llmsec. Use with: llmsec run --model <name> --config llmsec.example.toml
+# Command-line flags override values from this file. Unknown keys are rejected.
+
+[endpoint]
+adapter = "ollama"                 # ollama | openai | reference
+url = "http://127.0.0.1:11434"     # for adapter = "openai" use the API root, e.g. http://127.0.0.1:8080/v1
+timeout_s = 300
+allow_remote = false               # true lets prompts and outputs leave this machine
+# api_key_env = "LOCAL_LLM_TOKEN"  # openai adapter only: NAME of an env var holding a bearer token
+
+[generation]
+temperature = 0.0
+seed = 1234                        # repeat r uses seed + r
+max_tokens = 768
+num_ctx = 8192                     # ollama only
+
+[run]
+suite = "core"                     # built-in suite name or a suite directory
+repeat = 1
+output_dir = "results"
