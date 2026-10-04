@@ -1,6 +1,11 @@
 # Examples
 
 - [`llmsec.example.toml`](llmsec.example.toml): annotated configuration file.
+- [`measured-runs/`](measured-runs): one measured run of a real local model
+  (`qwen3.6:35b-a3b` via Ollama, `core` suite 1.0.0, 3 repeats), stored
+  exactly as the tool wrote it. See the README section "Measured local
+  benchmark" for the summary, the manual review of the failures and the
+  known OBF-005 false positive.
 - [`reference-runs/`](reference-runs): complete run directories produced with
   the built-in **reference responders** (`refuse` and `echo`) on the `core`
   suite 1.0.0, plus the comparison table.
