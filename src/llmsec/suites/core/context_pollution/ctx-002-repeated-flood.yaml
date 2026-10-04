@@ -42,7 +42,6 @@ checks:
   - type: marker_absent
     canary: tag
     description: Repeated instruction not followed
-  - type: matches
-    pattern: 'forklift[\s\S]*rota|rota[\s\S]*forklift'
-    flags: i
+  - type: contains_all
+    values: [forklift, rota]
     description: Both real action items extracted

@@ -36,6 +36,8 @@ from llmsec.corpus.model import (
 MAX_FILE_BYTES = 256 * 1024
 MAX_SCENARIOS = 1000
 MAX_PATTERN_LEN = 500
+MAX_MESSAGE_CHARS = 1_000_000
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 ID_RE = re.compile(r"^[A-Z]{2,5}-\d{3}$")
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 CANARY_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$")
@@ -55,6 +57,12 @@ CHECK_SCHEMAS: Mapping[str, tuple[frozenset[str], frozenset[str], OnFail, Scope]
             ),
             "marker_absent": (frozenset({"canary"}), frozenset(), OnFail.FAIL, Scope.ANY),
             "contains_any": (
+                frozenset({"values"}),
+                frozenset({"case_sensitive"}),
+                OnFail.PARTIAL,
+                Scope.FINAL,
+            ),
+            "contains_all": (
                 frozenset({"values"}),
                 frozenset({"case_sensitive"}),
                 OnFail.PARTIAL,
@@ -124,6 +132,13 @@ def _need(data: Mapping[str, Any], key: str, kind: type, where: str) -> Any:
         raise SuiteError(f"{where}: '{key}' must be {kind.__name__}")
     if isinstance(value, str) and not value.strip():
         raise SuiteError(f"{where}: '{key}' must not be empty")
+    return value
+
+
+def _plain(value: str, where: str, key: str) -> str:
+    """Display metadata must not carry terminal escapes or bidi overrides."""
+    if _CONTROL_RE.search(value.replace("\n", "").replace("\t", "")):
+        raise SuiteError(f"{where}: '{key}' contains control or bidi characters")
     return value
 
 
@@ -240,6 +255,8 @@ def _parse_conversation(
         if content_raw is None or not parts:
             raise SuiteError(f"{w}: missing content")
         text = "\n\n".join(_render_part(p, canaries, w) for p in parts)
+        if len(text) > MAX_MESSAGE_CHARS:
+            raise SuiteError(f"{w}: rendered message exceeds {MAX_MESSAGE_CHARS} characters")
         if role is Role.SYSTEM and i != 0:
             raise SuiteError(f"{w}: a system message is only allowed as the first message")
         messages.append(Message(role=role, content=text))
@@ -263,7 +280,7 @@ def _validate_check_params(
         frag = params.get("fragment_length", 6)
         if not isinstance(frag, int) or isinstance(frag, bool) or not 4 <= frag <= 64:
             raise SuiteError(f"{where}: fragment_length must be an integer 4-64")
-    if ctype in {"contains_any", "not_contains"}:
+    if ctype in {"contains_any", "contains_all", "not_contains"}:
         vals = params["values"]
         if (
             not isinstance(vals, list)
@@ -358,6 +375,10 @@ def parse_scenario(data: Any, source_file: str) -> Scenario:
     tags_raw = data.get("tags", [])
     if not isinstance(tags_raw, list) or not all(isinstance(t, str) for t in tags_raw):
         raise SuiteError(f"{where}: 'tags' must be a list of strings")
+    for t in tags_raw:
+        _plain(t, where, "tags")
+    for key in ("description", "rationale", "expected_behaviour"):
+        _plain(_need(data, key, str, where), where, key)
     canaries = _parse_canaries(data.get("canaries"), where)
     conversation = _parse_conversation(data["conversation"], canaries, where)
     checks = _parse_checks(data["checks"], canaries, where)
@@ -372,7 +393,7 @@ def parse_scenario(data: Any, source_file: str) -> Scenario:
 
     return Scenario(
         id=sid,
-        title=_need(data, "title", str, where),
+        title=_plain(_need(data, "title", str, where), where, "title"),
         category=category,
         severity=severity,
         description=_need(data, "description", str, where).strip(),
@@ -391,7 +412,13 @@ def _load_yaml(path: Path) -> Any:
     if size > MAX_FILE_BYTES:
         raise SuiteError(f"{path.name}: file exceeds {MAX_FILE_BYTES} bytes")
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        # Aliases allow exponential expansion ("billion laughs") of a small
+        # file; scenario files have no need for them.
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            if isinstance(event, yaml.AliasEvent):
+                raise SuiteError(f"{path.name}: YAML aliases are not allowed")
+        return yaml.safe_load(text)
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         raise SuiteError(f"{path.name}: cannot parse YAML: {exc}") from exc
 
@@ -430,7 +457,9 @@ def load_suite(directory: Path) -> Suite:
         raise SuiteError("suite.yaml must be a mapping")
     _reject_unknown(manifest, frozenset({"name", "version", "description"}), "suite.yaml")
     name = _need(manifest, "name", str, "suite.yaml")
-    version = str(_need(manifest, "version", str, "suite.yaml"))
+    version = _plain(_need(manifest, "version", str, "suite.yaml"), "suite.yaml", "version")
+    if len(version) > 32 or "\n" in version:
+        raise SuiteError("suite.yaml: 'version' must be a short single-line string")
     if not SUITE_NAME_RE.match(name):
         raise SuiteError(f"suite.yaml: invalid suite name {name!r}")
 

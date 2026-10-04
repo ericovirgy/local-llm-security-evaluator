@@ -72,7 +72,7 @@ def md_code_block(text: str, limit: int = EXCERPT_CHARS) -> str:
 
 
 def _fmt(value: Any, suffix: str = "") -> str:
-    return "n/a" if value is None else f"{value}{suffix}"
+    return "n/a" if value is None else clean(f"{value}{suffix}", single_line=True)
 
 
 def _model_label(manifest: Mapping[str, Any]) -> str:
@@ -98,8 +98,8 @@ class _Style:
 _STATUS_CODE = {"PASS": "1;32", "REVIEW": "1;33", "FAIL": "1;31"}
 
 
-def _bar(score: float | None, width: int = 20) -> str:
-    if score is None:
+def _bar(score: Any, width: int = 20) -> str:
+    if not isinstance(score, int | float) or isinstance(score, bool) or not 0 <= score <= 100:
         return " " * width
     filled = round(width * score / 100)
     return "█" * filled + "░" * (width - filled)
@@ -123,13 +123,14 @@ def render_terminal(
         f"Model:    {_model_label(manifest)}  "
         f"({clean(adapter.get('name', '?'), True)} @ {clean(adapter.get('endpoint', '?'), True)})",
         f"Suite:    {clean(suite.get('name', '?'), True)} {clean(suite.get('version', ''), True)}"
-        f"  ({m['scenarios']} scenarios x {m['repeats']} repeat(s) = {m['executions']} executions)",
+        f"  ({_fmt(m['scenarios'])} scenarios x {_fmt(m['repeats'])} repeat(s) = "
+        f"{_fmt(m['executions'])} executions)",
         f"Run:      {clean(manifest.get('run_id', '?'), True)}",
         "",
         f"Security score:     {_fmt(m['security_score'])} / 100"
         + (f"   (worst case {_fmt(m['worst_case_score'])})" if m["repeats"] > 1 else ""),
         f"Raw pass rate:      {_fmt(m['raw_pass_rate'], '%')}",
-        f"Coverage:           {m['coverage']:.0%}",
+        f"Coverage:           {float(m['coverage']):.0%}",
         f"Critical failures:  {len(m['critical_failures'])}",
         f"High failures:      {len(m['high_failures'])}",
         "Verdicts:           " + "  ".join(f"{k} {v}" for k, v in m["verdict_counts"].items() if v),
@@ -151,12 +152,12 @@ def render_terminal(
         )
     lines += ["", f"{'Category':<30} {'Score':>6}  {'':20}  {'Fail':>5}"]
     for cat, row in m["categories"].items():
-        label = CATEGORIES.get(cat, cat)
+        label = CATEGORIES.get(cat, clean(cat, single_line=True))
         lines.append(
             f"{label:<30} {_fmt(row['score']):>6}  {_bar(row['score'])}  "
             f"{len(row['failed_scenarios']):>5}"
         )
-    status = m["status"]
+    status = clean(m["status"], single_line=True)
     lines += ["", "Result: " + st(status, _STATUS_CODE.get(status, "1"))]
     lines += [f"  - {clean(r, True)}" for r in m["status_reasons"]]
     if report_path:
@@ -179,27 +180,31 @@ def render_markdown(manifest: Mapping[str, Any], results: Mapping[str, Any]) -> 
         out += [f"> **Calibration output.** {REFERENCE_NOTICE}", ""]
     out += [f"> {DISCLAIMER}", ""]
 
-    out += ["## Result", "", f"**Status: {m['status']}**", ""]
+    out += ["## Result", "", f"**Status: {md_cell(m['status'])}**", ""]
     out += [f"- {md_cell(r)}" for r in m["status_reasons"]]
     out += [
         "",
         "| Metric | Value |",
         "|---|---:|",
-        f"| Security score (severity-weighted, 0-100) | {_fmt(m['security_score'])} |",
+        f"| Security score (severity-weighted, 0-100) | {md_cell(_fmt(m['security_score']))} |",
     ]
     if m["repeats"] > 1:
-        out.append(f"| Worst-case score (minimum per scenario) | {_fmt(m['worst_case_score'])} |")
+        out.append(
+            f"| Worst-case score (minimum per scenario) | {md_cell(_fmt(m['worst_case_score']))} |"
+        )
     out += [
-        f"| Raw pass rate | {_fmt(m['raw_pass_rate'], '%')} |",
-        f"| Coverage (determinate executions) | {m['coverage']:.0%} |",
+        f"| Raw pass rate | {md_cell(_fmt(m['raw_pass_rate'], '%'))} |",
+        f"| Coverage (determinate executions) | {float(m['coverage']):.0%} |",
         f"| Critical-severity failures | {len(m['critical_failures'])} |",
         f"| High-severity failures | {len(m['high_failures'])} |",
-        f"| Scenarios / repeats / executions | {m['scenarios']} / {m['repeats']} / "
-        f"{m['executions']} |",
-        f"| Mean latency per execution | {_fmt(m['latency']['mean_s'], ' s')} |",
-        f"| p95 latency per execution | {_fmt(m['latency']['p95_s'], ' s')} |",
+        "| Scenarios / repeats / executions | "
+        f"{md_cell(m['scenarios'])} / {md_cell(m['repeats'])} / "
+        f"{md_cell(m['executions'])} |",
+        f"| Mean latency per execution | {md_cell(_fmt(m['latency']['mean_s'], ' s'))} |",
+        f"| p95 latency per execution | {md_cell(_fmt(m['latency']['p95_s'], ' s'))} |",
         "",
-        "Verdicts: " + ", ".join(f"{k} {v}" for k, v in m["verdict_counts"].items()),
+        "Verdicts: "
+        + ", ".join(f"{md_cell(k)} {md_cell(v)}" for k, v in m["verdict_counts"].items()),
         "",
         "## Categories",
         "",
@@ -208,8 +213,9 @@ def render_markdown(manifest: Mapping[str, Any], results: Mapping[str, Any]) -> 
     ]
     for row in m["categories"].values():
         out.append(
-            f"| {md_cell(row['label'])} | {row['scenarios']} | {_fmt(row['score'])} | "
-            f"{_fmt(row['pass_rate'], '%')} | {_fmt(row['failure_rate'], '%')} | "
+            f"| {md_cell(row['label'])} | {md_cell(row['scenarios'])} | "
+            f"{md_cell(_fmt(row['score']))} | "
+            f"{md_cell(_fmt(row['pass_rate'], '%'))} | {md_cell(_fmt(row['failure_rate'], '%'))} | "
             f"{md_cell(', '.join(row['failed_scenarios']) or '-')} |"
         )
 
@@ -218,12 +224,12 @@ def render_markdown(manifest: Mapping[str, Any], results: Mapping[str, Any]) -> 
             "",
             "## Stability across repeats",
             "",
-            f"Consistency rate: {_fmt(m['stability']['consistency_rate'], '%')}",
+            f"Consistency rate: {md_cell(_fmt(m['stability']['consistency_rate'], '%'))}",
             "",
             "| Class | Scenarios |",
             "|---|---:|",
         ]
-        out += [f"| {md_cell(k)} | {v} |" for k, v in m["stability"]["classes"].items()]
+        out += [f"| {md_cell(k)} | {md_cell(v)} |" for k, v in m["stability"]["classes"].items()]
 
     scenarios = results["scenarios"]
     out += [
@@ -248,10 +254,11 @@ def render_markdown(manifest: Mapping[str, Any], results: Mapping[str, Any]) -> 
     for e in notable:
         meta = scenarios.get(e["scenario_id"], {})
         out += [
-            f"### {md_cell(e['scenario_id'])} (repeat {e['repeat']}): {e['verdict']}",
+            f"### {md_cell(e['scenario_id'])} (repeat {md_cell(e['repeat'])}): "
+            f"{md_cell(e['verdict'])}",
             "",
             f"**{md_cell(meta.get('title', ''))}** | severity {md_cell(e['severity'])} | "
-            f"seed {e['seed']} | {e['latency_s']} s",
+            f"seed {md_cell(e['seed'])} | {md_cell(e['latency_s'])} s",
             "",
             f"Expected behaviour: {md_cell(meta.get('expected_behaviour', ''))}",
             "",
@@ -261,11 +268,13 @@ def render_markdown(manifest: Mapping[str, Any], results: Mapping[str, Any]) -> 
         if e["checks"]:
             out += ["| Check | Result | Detail |", "|---|---|---|"]
             for c in e["checks"]:
-                res = "pass" if c["passed"] else f"**{c['effect']}**"
+                res = "pass" if c["passed"] is True else f"**{md_cell(c['effect'])}**"
                 out.append(f"| {md_cell(c['description'])} | {res} | {md_cell(c['reason'])} |")
             out.append("")
         for t in e["turns"]:
-            label = f"Model response {t['index'] + 1}" if len(e["turns"]) > 1 else "Model response"
+            label = (
+                f"Model response {int(t['index']) + 1}" if len(e["turns"]) > 1 else "Model response"
+            )
             out += [
                 f"{label} (finish: {md_cell(t['finish_reason'] or 'n/a')}):",
                 "",

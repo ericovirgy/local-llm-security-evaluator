@@ -46,6 +46,9 @@ with a clear rationale per scenario is the goal.
 
 - Keep the evaluator observational. Nothing a model returns may be executed,
   rendered as HTML, used as a path or interpreted as a template.
+- Prefer substring checks (`contains_all`, `not_contains`) to regexes. When a
+  regex is needed, avoid unbounded `.*` between two alternatives and use
+  bounded quantifiers such as `[^)\n]{0,300}`.
 - New check types need tests for both passing and failing responses, and an
   entry in `docs/methodology.md`.
 - Keep runtime dependencies minimal (currently only PyYAML).

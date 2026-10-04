@@ -4,13 +4,15 @@
 * environment proxy variables are ignored, so prompts never transit a proxy
   the user did not configure for this tool;
 * redirects are refused;
-* response bodies are size-limited and must be JSON objects.
+* response bodies are size-limited, read against an overall deadline, and
+  must be JSON objects.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -19,7 +21,10 @@ from urllib.parse import urlsplit, urlunsplit
 from llmsec.adapters.base import AdapterError
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-_LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "ip6-localhost"}
+# Only "localhost" is accepted by name: other aliases are often not in
+# /etc/hosts and would be resolved through DNS, which an attacker may control.
+_LOOPBACK_NAMES = {"localhost"}
+_CHUNK = 64 * 1024
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -45,6 +50,10 @@ def validate_base_url(url: str, allow_remote: bool) -> str:
         raise AdapterError(f"unsupported URL scheme {parts.scheme!r}; use http or https")
     if not parts.hostname:
         raise AdapterError("endpoint URL has no host")
+    try:
+        parts.port  # noqa: B018 - raises ValueError for a malformed port
+    except ValueError:
+        raise AdapterError("endpoint URL has an invalid port") from None
     if parts.username or parts.password:
         raise AdapterError("credentials in the endpoint URL are not supported")
     if parts.query or parts.fragment:
@@ -60,7 +69,11 @@ def validate_base_url(url: str, allow_remote: bool) -> str:
 def redact_url(url: str) -> str:
     parts = urlsplit(url)
     host = parts.hostname or ""
-    netloc = f"{host}:{parts.port}" if parts.port else host
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    netloc = f"{host}:{port}" if port else host
     return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
@@ -80,8 +93,19 @@ def request_json(
         req.add_header(key, value)
     label = redact_url(url)
     try:
+        deadline = time.monotonic() + timeout
         with _OPENER.open(req, timeout=timeout) as resp:
-            raw = resp.read(MAX_RESPONSE_BYTES + 1)
+            chunks: list[bytes] = []
+            size = 0
+            while size <= MAX_RESPONSE_BYTES:
+                if time.monotonic() > deadline:
+                    raise AdapterError(f"response from {label} exceeded the {timeout:g} s deadline")
+                chunk = resp.read1(_CHUNK)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+            raw = b"".join(chunks)
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
@@ -96,7 +120,7 @@ def request_json(
         raise AdapterError(f"response from {label} exceeds {MAX_RESPONSE_BYTES} bytes")
     try:
         data = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):  # bad UTF-8/JSON, or ints over the digit limit
         raise AdapterError(f"response from {label} is not valid JSON") from None
     if not isinstance(data, dict):
         raise AdapterError(f"response from {label} is not a JSON object")

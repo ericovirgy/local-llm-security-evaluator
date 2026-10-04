@@ -61,7 +61,8 @@ def create_run_dir(output_dir: Path, run_id: str) -> Path:
 
 
 def _dump(obj: Any) -> bytes:
-    return (json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=False) + "\n").encode("utf-8")
+    text = json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=False) + "\n"
+    return text.encode("utf-8", "replace")
 
 
 def write_atomic(path: Path, data: bytes) -> None:
@@ -103,11 +104,47 @@ def _read_json(path: Path) -> dict[str, Any]:
     raw = path.read_bytes()
     try:
         data = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+    except (ValueError, RecursionError) as exc:  # bad UTF-8/JSON, or ints over the digit limit
         raise StoreError(f"{path} is not valid JSON: {exc}") from None
     if not isinstance(data, dict):
         raise StoreError(f"{path} does not contain a JSON object")
     return data
+
+
+_STATUSES = {"PASS", "REVIEW", "FAIL"}
+_VERDICTS = {"PASS", "PARTIAL", "FAIL", "INCONCLUSIVE", "ERROR"}
+
+
+def _validate_metrics(m: dict[str, Any], where: Path) -> None:
+    """Shape checks for values the renderers interpolate. Renderers still escape."""
+
+    def bad(field: str) -> StoreError:
+        return StoreError(f"{where}: metrics.{field} missing or malformed")
+
+    def number(value: Any, nullable: bool = True) -> bool:
+        if value is None:
+            return nullable
+        return isinstance(value, int | float) and not isinstance(value, bool)
+
+    if m.get("status") not in _STATUSES:
+        raise bad("status")
+    for f in ("security_score", "worst_case_score", "raw_pass_rate"):
+        if not number(m.get(f)):
+            raise bad(f)
+    for f in ("coverage", "scenarios", "executions", "repeats"):
+        if not number(m.get(f), nullable=False):
+            raise bad(f)
+    counts = m.get("verdict_counts")
+    if not isinstance(counts, dict) or not set(counts) <= _VERDICTS:
+        raise bad("verdict_counts")
+    if not all(number(v, nullable=False) for v in counts.values()):
+        raise bad("verdict_counts")
+    for f in ("categories", "latency", "stability", "per_scenario"):
+        if not isinstance(m.get(f), dict):
+            raise bad(f)
+    for f in ("critical_failures", "high_failures", "status_reasons"):
+        if not isinstance(m.get(f), list):
+            raise bad(f)
 
 
 def load_run(path: Path) -> tuple[dict[str, Any], dict[str, Any], bool | None]:
@@ -129,6 +166,7 @@ def load_run(path: Path) -> tuple[dict[str, Any], dict[str, Any], bool | None]:
     for key, kind in (("metrics", dict), ("executions", list), ("scenarios", dict)):
         if not isinstance(results.get(key), kind):
             raise StoreError(f"{results_path}: '{key}' missing or malformed")
+    _validate_metrics(results["metrics"], results_path)
     manifest_path = run_dir / "manifest.json"
     manifest = _read_json(manifest_path) if manifest_path.is_file() else {}
     integrity: bool | None = None

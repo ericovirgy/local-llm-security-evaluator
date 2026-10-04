@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import math
 import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -131,8 +133,12 @@ def resolve_settings(args: argparse.Namespace) -> Settings:
         raise UsageError("max-tokens must be between 1 and 32768")
     if not 1 <= s.repeat <= 50:
         raise UsageError("repeat must be between 1 and 50")
-    if s.timeout_s <= 0:
-        raise UsageError("timeout must be positive")
+    if not (math.isfinite(s.timeout_s) and 0 < s.timeout_s <= 3600):
+        raise UsageError("timeout must be between 0 and 3600 seconds")
+    if s.top_p is not None and not (math.isfinite(s.top_p) and 0 < s.top_p <= 1):
+        raise UsageError("top-p must be in (0, 1]")
+    if not math.isfinite(s.temperature):
+        raise UsageError("temperature must be a finite number")
     return s
 
 
@@ -160,6 +166,24 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+@contextlib.contextmanager
+def _malformed_guard() -> Iterator[None]:
+    """Stored results are untrusted input: report bad structure instead of crashing."""
+    try:
+        yield
+    except (KeyError, TypeError, ValueError, AttributeError, IndexError) as exc:
+        raise StoreError(f"stored results are malformed ({type(exc).__name__}: {exc})") from None
+
+
+def _output_target(path: str, force: bool) -> Path:
+    target = Path(path)
+    if target.is_dir():
+        raise UsageError(f"{target} is a directory")
+    if target.exists() and not force:
+        raise UsageError(f"{target} exists; pass --force to overwrite")
+    return target
+
+
 # --------------------------------------------------------------------------- run
 
 
@@ -168,7 +192,7 @@ def _progress(stream: TextIO) -> Any:
         width = len(str(total))
         stream.write(
             f"[{done:>{width}}/{total}] {scenario.id:<8} r{rec.repeat} "
-            f"{rec.verdict.value:<12} {rec.latency_s:6.1f}s  {scenario.title[:48]}\n"
+            f"{rec.verdict.value:<12} {rec.latency_s:6.1f}s  {clean(scenario.title, True)[:48]}\n"
         )
         stream.flush()
 
@@ -191,15 +215,22 @@ def execute_run(
     info = adapter.describe(model)
     params = params_from(s)
     run_id = new_run_id()
+    # Create the run directory before spending time on the model, so an
+    # unusable output path fails fast instead of discarding a finished run.
+    run_dir = create_run_dir(Path(s.output_dir), run_id)
     started = _now()
     if not quiet:
         err.write(
             f"llmsec {__version__}: {len(scenarios)} scenario(s) x {s.repeat} against "
             f"{clean(model, True)} via {adapter.name} ({adapter.endpoint_label()})\n"
         )
-    records = run_scenarios(
-        adapter, model, scenarios, params, s.repeat, None if quiet else _progress(err)
-    )
+    try:
+        records = run_scenarios(
+            adapter, model, scenarios, params, s.repeat, None if quiet else _progress(err)
+        )
+    except BaseException:
+        run_dir.rmdir()  # still empty: nothing has been written yet
+        raise
     finished = _now()
     executions = [r.to_dict() for r in records]
     metrics = compute_metrics(executions)
@@ -243,7 +274,6 @@ def execute_run(
         },
         "executions": executions,
     }
-    run_dir = create_run_dir(Path(s.output_dir), run_id)
     write_run(run_dir, manifest, results, render_markdown(manifest, results))
     return run_dir, manifest, results
 
@@ -309,12 +339,12 @@ def cmd_compare(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
                 s, _validate_model_name(model), suite, cats, ids, args.quiet, err
             )
             runs.append((manifest, results))
-    out.write(render_comparison_terminal(runs) + "\n")
+    with _malformed_guard():
+        out.write(render_comparison_terminal(runs) + "\n")
     if args.output:
-        target = Path(args.output)
-        if target.exists() and not args.force:
-            raise UsageError(f"{target} exists; pass --force to overwrite")
-        write_atomic(target, render_comparison_markdown(runs).encode("utf-8"))
+        target = _output_target(args.output, args.force)
+        with _malformed_guard():
+            write_atomic(target, render_comparison_markdown(runs).encode("utf-8"))
         err.write(f"comparison written to {target}\n")
     return 0
 
@@ -362,10 +392,13 @@ def cmd_list_tests(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
             + "\n"
         )
         return 0
-    out.write(f"Suite {suite.name} {suite.version}  ({len(scenarios)} scenarios)\n")
+    out.write(
+        f"Suite {clean(suite.name, True)} {clean(suite.version, True)}  "
+        f"({len(scenarios)} scenarios)\n"
+    )
     out.write(f"digest sha256:{suite.digest}\n\n")
     for sc in scenarios:
-        out.write(f"{sc.id:<8} {sc.category:<22} {sc.severity.value:<9} {sc.title}\n")
+        out.write(f"{sc.id:<8} {sc.category:<22} {sc.severity.value:<9} {clean(sc.title, True)}\n")
     return 0
 
 
@@ -375,7 +408,10 @@ def cmd_validate(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     counts: dict[str, int] = {}
     for sc in suite.scenarios:
         counts[sc.category] = counts.get(sc.category, 0) + 1
-    out.write(f"OK: suite {suite.name} {suite.version}, {len(suite.scenarios)} scenarios\n")
+    out.write(
+        f"OK: suite {clean(suite.name, True)} {clean(suite.version, True)}, "
+        f"{len(suite.scenarios)} scenarios\n"
+    )
     for cat in CATEGORIES:
         if cat in counts:
             out.write(f"  {cat:<22} {counts[cat]}\n")
@@ -390,17 +426,16 @@ def cmd_report(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
             "warning: results.json does not match the digest recorded in manifest.json; "
             "the file changed after the run\n"
         )
-    if args.format == "markdown":
-        text = render_markdown(manifest, results)
-    elif args.format == "json":
-        text = json.dumps({"manifest": manifest, "metrics": results["metrics"]}, indent=2)
-    else:
-        color = not args.no_color and out.isatty() and not args.output
-        text = render_terminal(manifest, results, color)
+    with _malformed_guard():
+        if args.format == "markdown":
+            text = render_markdown(manifest, results)
+        elif args.format == "json":
+            text = json.dumps({"manifest": manifest, "metrics": results["metrics"]}, indent=2)
+        else:
+            color = not args.no_color and out.isatty() and not args.output
+            text = render_terminal(manifest, results, color)
     if args.output:
-        target = Path(args.output)
-        if target.exists() and not args.force:
-            raise UsageError(f"{target} exists; pass --force to overwrite")
+        target = _output_target(args.output, args.force)
         write_atomic(target, (text + "\n").encode("utf-8"))
         err.write(f"report written to {target}\n")
     else:
@@ -517,6 +552,9 @@ def main(
     except (AdapterError, RunAborted) as exc:
         err.write(f"error: {clean(exc)}\n")
         return EXIT_ENDPOINT
+    except OSError as exc:
+        err.write(f"error: {clean(exc)}\n")
+        return EXIT_USAGE
     except KeyboardInterrupt:
         err.write("interrupted\n")
         return 130

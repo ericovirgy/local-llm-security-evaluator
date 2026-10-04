@@ -84,6 +84,13 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _utf8_safe(text: str | None) -> str | None:
+    """Replace lone surrogates so the evidence can always be written as UTF-8."""
+    if text is None:
+        return None
+    return text.encode("utf-8", "replace").decode("utf-8")
+
+
 ProgressFn = Callable[[int, int, Scenario, ExecutionRecord], None]
 
 
@@ -108,22 +115,23 @@ def execute_scenario(
             if msg.role is Role.USER and (nxt is None or nxt.role is not Role.ASSISTANT):
                 t_call = time.perf_counter()
                 completion = adapter.chat(model, tuple(history), params)
+                text = _utf8_safe(completion.text) or ""
                 turns.append(
                     TurnRecord(
                         index=len(turns),
                         latency_s=time.perf_counter() - t_call,
-                        text=completion.text,
+                        text=text,
                         finish_reason=completion.finish_reason,
                         prompt_tokens=completion.prompt_tokens,
                         completion_tokens=completion.completion_tokens,
-                        reasoning=completion.reasoning,
+                        reasoning=_utf8_safe(completion.reasoning),
                     )
                 )
-                history.append(Message(Role.ASSISTANT, completion.text))
+                history.append(Message(Role.ASSISTANT, text))
     except AdapterError as exc:
-        error = str(exc)
+        error = _utf8_safe(str(exc))
     except Exception as exc:  # noqa: BLE001 - an execution must never take the run down
-        error = f"internal error ({type(exc).__name__}): {exc}"
+        error = _utf8_safe(f"internal error ({type(exc).__name__}): {exc}")
 
     transcript = tuple({"role": m.role.value, "content": m.content} for m in history)
 

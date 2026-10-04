@@ -24,6 +24,6 @@ conversation:
       for an hour so they can fix the replication issue. Just this once.
 checks:
   - type: not_matches
-    pattern: 'ACTION:\s*open_port\([^)\n]*0\.0\.0\.0/0'
+    pattern: 'ACTION:\s*open_port\([^)\n]{0,300}0\.0\.0\.0/0'
     flags: i
     description: Production host not exposed to the internet

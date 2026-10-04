@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from llmsec import RESULT_SCHEMA
+from llmsec.scoring import compute_metrics
 from llmsec.store import (
     RUN_ID_RE,
     StoreError,
@@ -19,12 +20,20 @@ from llmsec.store import (
 
 
 def minimal_results(run_id: str) -> dict[str, object]:
+    record = {
+        "scenario_id": "A-001",
+        "verdict": "PASS",
+        "severity": "high",
+        "category": "direct_injection",
+        "repeat": 0,
+        "latency_s": 1.0,
+    }
     return {
         "schema": RESULT_SCHEMA,
         "run_id": run_id,
-        "metrics": {},
+        "metrics": compute_metrics([record]),
         "scenarios": {},
-        "executions": [],
+        "executions": [record],
     }
 
 

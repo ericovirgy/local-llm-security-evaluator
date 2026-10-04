@@ -37,19 +37,28 @@ received from someone else.
 | Credentials leak into results | Endpoint URLs with user-info are rejected; API keys are read from an env var at runtime and never stored. | `test_endpoint_validation`, `test_openai_compatible_adapter` |
 | Malformed or hostile endpoint responses crash the run | Size cap, strict JSON shape validation, all failures mapped to `AdapterError`, which becomes an `ERROR` record. Repeated errors abort cleanly. | `test_malformed_ollama_responses_raise_adapter_error`, `test_run_aborts_after_consecutive_errors` |
 | Path traversal or overwrite through run identifiers or outputs | Run ids are generated and validated against a strict pattern; run directories are created exclusively; `--output` refuses to overwrite without `--force`. Nothing derived from model output is used in a path. | `tests/test_store.py`, `tests/test_cli.py` |
-| Hostile custom suite YAML | `yaml.safe_load` only; unknown keys rejected; file size and count limits; symlinked files ignored; regex length limit and compile-time validation; templates restricted to `{{canary.<name>}}`. | `tests/test_loader.py` |
+| Hostile custom suite YAML | `yaml.safe_load` only; YAML aliases rejected; unknown keys rejected; file, message and count limits; control characters rejected in display metadata; symlinked files ignored; regex length limit and compile-time validation; templates restricted to `{{canary.<name>}}`. | `tests/test_loader.py`, `tests/test_security_regressions.py` |
+| Slow or hostile model output stalls the run | Built-in patterns avoid unbounded backtracking; regexes inspect at most 32,000 characters; endpoint bodies are read against an overall deadline. | `test_f1_*`, `test_f3e_*` |
 | Tampered results presented as genuine | `manifest.json` records a SHA-256 of `results.json`; `llmsec report` warns on mismatch. This detects accidental change only; it is not a signature. | `test_modified_results_are_detected` |
+| Forged stored results inject escapes or markup | `load_run` validates metric shapes; every interpolated value is sanitised or escaped; structural errors produce a clean error. | `test_f5_*`, `test_f6_*` |
 
 The adversarial review of the evaluator, its findings and the regression tests
 added for them are recorded in [security-review.md](security-review.md).
 
 ## Residual risks
 
-- A custom suite can contain a regular expression that is slow on some input.
-  Patterns are length-limited and responses are capped before matching, but
-  Python's `re` module has no timeout. Only run suites you have reviewed.
+- A custom suite can contain a regular expression that backtracks
+  catastrophically (for example `(a|aa)+$`). Patterns are length-limited and
+  regex input is capped at 32,000 characters, but Python's `re` module has no
+  timeout. Treat custom suites as code: only run suites you have reviewed.
+- Regex checks only see the first 32,000 characters of a response; secret,
+  marker and substring checks see the first 200,000. Content beyond those
+  limits is not inspected.
 - Stored transcripts contain whatever the model produced. Treat
   `results.json` as untrusted data when processing it with other tools.
-- The loopback check is based on the configured host string or IP literal. A
-  hostname that resolves to a remote address is refused unless it is one of
-  the well-known loopback names; DNS is never consulted.
+- The loopback check is based on the configured host string: only the name
+  `localhost` and loopback IP literals are accepted without `--allow-remote`.
+  DNS is never consulted, so `localhost` is trusted to resolve through
+  `/etc/hosts` as usual.
+- The request deadline covers reading the response body. Waiting for the
+  response headers is bounded by the per-operation socket timeout only.
