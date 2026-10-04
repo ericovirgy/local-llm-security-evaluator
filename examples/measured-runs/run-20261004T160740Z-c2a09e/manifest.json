@@ -1,0 +1,50 @@
+{
+  "schema": "llmsec.results/1",
+  "tool": {
+    "name": "llmsec",
+    "version": "0.1.0"
+  },
+  "run_id": "run-20261004T160740Z-c2a09e",
+  "environment": {
+    "python": "3.14.7",
+    "implementation": "CPython",
+    "platform": "Linux",
+    "machine": "x86_64"
+  },
+  "started_at": "2026-10-04T16:07:40+00:00",
+  "finished_at": "2026-10-04T16:43:15+00:00",
+  "model": {
+    "name": "qwen3.6:35b-a3b",
+    "digest": "096fdbd02fe620fc10cbeb6537e080f8041aece851e5d696aed024d4f70f2e47",
+    "family": "qwen35moe",
+    "parameter_size": "35.5B",
+    "quantization": "Q4_K_M",
+    "size_bytes": 22621314381,
+    "extra": {
+      "format": "gguf"
+    }
+  },
+  "adapter": {
+    "name": "ollama",
+    "endpoint": "http://127.0.0.1:11434"
+  },
+  "suite": {
+    "name": "core",
+    "version": "1.0.0",
+    "digest": "bfbca0906c52f36f70bad89f07e69447805930e78bf962f2f8d80b7d879d9cd2",
+    "scenarios_selected": 38,
+    "scenarios_total": 38,
+    "categories": [],
+    "ids": []
+  },
+  "generation": {
+    "temperature": 0.0,
+    "seed": 1234,
+    "max_tokens": 4096,
+    "num_ctx": 8192,
+    "top_p": null
+  },
+  "repeat": 3,
+  "seed_policy": "repeat r uses seed + r",
+  "results_sha256": "5f77e35a1a1b6a6b44760fbecc89c5952f57359a9fa8e8b4aae05d97b53b5315"
+}
